@@ -7,8 +7,7 @@ $CpuAlertSamples  = 5     # 連続でこの回数超えたら通知（既定 2 �
 $ProcMemAlertMB   = 2048  # 単一プロセスのプライベートメモリ
 $AlertCooldownSec = 300   # 同じ内容の通知を繰り返さない間隔
 $PopupTopN        = 10    # ホバー時のポップアップに出すプロセス数
-$PopupTabWidth    = 44    # ポップアップのタブ名の最大幅（半角換算）
-# Firefox 側の mozilla.cfg が書き出す PID -> タブ名。これより古ければ Firefox 側が止まっているとみなす
+$PopupTabWidth    = 44    # ポップアップのタブ名の最大幅（半角換算）# Firefox 側の mozilla.cfg が書き出す PID -> タブ名。これより古ければ Firefox 側が止まっているとみなす
 $ProcInfoPath     = Join-Path $env:LOCALAPPDATA 'FirefoxProcTray\procinfo.json'
 $ProcInfoMaxAgeSec = 10
 # requestProcInfo の type を表示用の短い名前に
@@ -75,7 +74,24 @@ $PrevCpu   = @{}   # PID -> 前回の TotalProcessorTime (ticks)
 $TypeCache = @{}   # PID -> プロセス種類
 $LastAlert = @{}   # 通知キー -> 最終通知時刻
 $TabInfoMissingText = 'タブ名を取得できていません（mozilla.cfg 未導入、または Firefox 側でエラー）'
-$State     = @{ TabInfoOk = $false; PrevTime = $null; HighCount = 0; IconHandle = [IntPtr]::Zero; IconKey = ''; AlertsOn = $true; Rows = @(); HoverAnchor = [System.Drawing.Point]::Empty; HoverRect = [System.Drawing.Rectangle]::Empty }
+$State     = @{ TabInfoOk = $false; PrevTime = $null; HighCount = 0; IconHandle = [IntPtr]::Zero; IconKey = ''; AlertsOn = $true; Rows = @(); HoverAnchor = [System.Drawing.Point]::Empty; HoverRect = [System.Drawing.Rectangle]::Empty; SortCol = 2; SortDesc = $true }
+# 一覧ウィンドウの列。Desc は最初にクリックしたときの並び順（数値は大きい順、文字は昇順）
+$ListColumns = @(
+    @{ Title = 'PID';                  Width = 80;  Align = 'Left';  Key = 'Id';        Desc = $false }
+    @{ Title = '種類';                 Width = 90;  Align = 'Left';  Key = 'Type';      Desc = $false }
+    @{ Title = 'CPU %';                Width = 80;  Align = 'Right'; Key = 'Cpu';       Desc = $true }
+    @{ Title = '専用メモリ (MB)';      Width = 120; Align = 'Right'; Key = 'PrivateMB'; Desc = $true }
+    @{ Title = 'ワーキングセット (MB)'; Width = 140; Align = 'Right'; Key = 'WorkingMB'; Desc = $true }
+    @{ Title = 'タブ';                 Width = 420; Align = 'Left';  Key = { $_.Tabs -join ' / ' }; Desc = $false; EmptyLast = $true }
+)
+# ポップアップの列。Width は半角換算の桁数（▲▼ 込み）、ListCol は対応する $ListColumns の添字
+$PopupColumns = @(
+    @{ Title = 'PID';            Width = 7;  Right = $false; ListCol = 0 }
+    @{ Title = '種類';           Width = 9;  Right = $false; ListCol = 1 }
+    @{ Title = 'CPU%';           Width = 7;  Right = $true;  ListCol = 2 }
+    @{ Title = '専用メモリ(MB)'; Width = 16; Right = $true;  ListCol = 3 }
+    @{ Title = 'タブ';           Width = 0;  Right = $false; ListCol = 5 }
+)
 
 function Read-ProcInfo {
     try {
@@ -192,14 +208,37 @@ function Test-Alerts($rows, [double]$cpu) {
     }
 }
 
+function Get-SortedRows($rows) {
+    # 同じ値どうしは PID 順にして、更新のたびに行が入れ替わらないようにする
+    $col = $ListColumns[$State.SortCol]
+    $keys = @(@{ Expression = $col.Key; Descending = $State.SortDesc }, 'Id')
+    # タブのないプロセス（GPU など）は昇順・降順どちらでも末尾に回す
+    if ($col.EmptyLast) { $keys = @(@{ Expression = { $_.Tabs.Count -gt 0 }; Descending = $true }) + $keys }
+    @($rows | Sort-Object $keys)
+}
+
+# 並び順は一覧ウィンドウとポップアップで共有する。$listCol は $ListColumns の添字
+function Set-Sort([int]$listCol) {
+    if ($listCol -eq $State.SortCol) { $State.SortDesc = -not $State.SortDesc }
+    else { $State.SortCol = $listCol; $State.SortDesc = $ListColumns[$listCol].Desc }
+    if ($Form.Visible) { Update-List $State.Rows }
+    if ($Popup.Visible) { Update-Popup $State.Rows; Move-Popup }
+}
+
 function Update-List($rows) {
     $cpu = if ($rows.Count) { ($rows | Measure-Object Cpu -Sum).Sum } else { 0 }
     $mem = if ($rows.Count) { ($rows | Measure-Object PrivateMB -Sum).Sum } else { 0 }
     $Summary.Text = '合計 CPU {0:N1}%    専用メモリ {1:N0} MB    {2} プロセス    {3} 秒ごとに更新' -f $cpu, $mem, $rows.Count, $IntervalSec
     if (-not $State.TabInfoOk) { $Summary.Text += '    ※ ' + $TabInfoMissingText }
+    for ($i = 0; $i -lt $ListColumns.Count; $i++) {
+        $mark = if ($i -ne $State.SortCol) { '' } elseif ($State.SortDesc) { ' ▼' } else { ' ▲' }
+        $text = $ListColumns[$i].Title + $mark
+        if ($List.Columns[$i].Text -ne $text) { $List.Columns[$i].Text = $text }
+    }
+    $sorted = Get-SortedRows $rows
     $List.BeginUpdate()
     $List.Items.Clear()
-    foreach ($r in $rows) {
+    foreach ($r in $sorted) {
         $item = [System.Windows.Forms.ListViewItem]::new([string]$r.Id)
         [void]$item.SubItems.Add($r.Type)
         [void]$item.SubItems.Add(('{0:N1}' -f $r.Cpu))
@@ -244,9 +283,34 @@ function Get-TabCell($r) {
     (Limit-Width $r.Tabs[0] ($PopupTabWidth - $more.Length * 2)) + $more
 }
 
+function Format-PopupLine([string[]]$cells) {
+    $parts = for ($i = 0; $i -lt $PopupColumns.Count; $i++) {
+        Format-Cell $cells[$i] $PopupColumns[$i].Width -Right:$PopupColumns[$i].Right
+    }
+    $parts -join ' '
+}
+
+# 見出し行のクリック位置 (x) を列の添字に変換する。等幅フォントの 1 桁の幅と描画の左余白を実測して桁位置を求める
+function Get-PopupColumnAt([int]$x) {
+    $g = $PopupCols.CreateGraphics()
+    try {
+        $w10 = $g.MeasureString('0' * 10, $PopupCols.Font).Width
+        $w20 = $g.MeasureString('0' * 20, $PopupCols.Font).Width
+    } finally { $g.Dispose() }
+    $cw = ($w20 - $w10) / 10
+    $pos = ($x - ($w10 - $cw * 10) / 2) / $cw
+    $edge = 0
+    for ($i = 0; $i -lt $PopupColumns.Count - 1; $i++) {
+        $edge += $PopupColumns[$i].Width + 1   # 列の後ろの区切り空白は左の列に含める
+        if ($pos -lt $edge) { return $i }
+    }
+    $PopupColumns.Count - 1
+}
+
 function Update-Popup($rows) {
     if ($rows.Count -eq 0) {
         $PopupHead.Text = 'Firefox は起動していません'
+        $PopupCols.Visible = $false
         $PopupBody.Visible = $false
         $PopupFoot.Visible = $false
         return
@@ -254,14 +318,14 @@ function Update-Popup($rows) {
     $cpu = ($rows | Measure-Object Cpu -Sum).Sum
     $mem = ($rows | Measure-Object PrivateMB -Sum).Sum
     $PopupHead.Text = 'Firefox   CPU {0:N1}%   メモリ {1:N0} MB   {2} プロセス' -f $cpu, $mem, $rows.Count
-    $lines = @((Format-Cell 'PID' 7) + ' ' + (Format-Cell '種類' 9) + ' ' + (Format-Cell 'CPU%' 6 -Right) + ' ' +
-               (Format-Cell '専用メモリ(MB)' 14 -Right) + '  タブ')
-    foreach ($r in @($rows | Select-Object -First $PopupTopN)) {
-        $lines += (Format-Cell $r.Id 7) + ' ' + (Format-Cell $r.Type 9) + ' ' +
-                  (Format-Cell ('{0:N1}' -f $r.Cpu) 6 -Right) + ' ' + (Format-Cell ('{0:N0}' -f $r.PrivateMB) 14 -Right) +
-                  '  ' + (Get-TabCell $r)
+    $PopupCols.Text = Format-PopupLine @($PopupColumns | ForEach-Object {
+        $_.Title + $(if ($_.ListCol -ne $State.SortCol) { '' } elseif ($State.SortDesc) { '▼' } else { '▲' })
+    })
+    $PopupCols.Visible = $true
+    $lines = foreach ($r in @(Get-SortedRows $rows | Select-Object -First $PopupTopN)) {
+        Format-PopupLine @([string]$r.Id, $r.Type, ('{0:N1}' -f $r.Cpu), ('{0:N0}' -f $r.PrivateMB), (Get-TabCell $r))
     }
-    $PopupBody.Text = $lines -join "`r`n"
+    $PopupBody.Text = @($lines) -join "`r`n"
     $PopupBody.Visible = $true
     $foot = @()
     if ($rows.Count -gt $PopupTopN) { $foot += 'ほか {0} プロセス' -f ($rows.Count - $PopupTopN) }
@@ -317,12 +381,11 @@ $List.Dock = 'Fill'
 $List.View = 'Details'
 $List.FullRowSelect = $true
 $List.GridLines = $true
-[void]$List.Columns.Add('PID', 80)
-[void]$List.Columns.Add('種類', 90)
-[void]$List.Columns.Add('CPU %', 80, 'Right')
-[void]$List.Columns.Add('専用メモリ (MB)', 120, 'Right')
-[void]$List.Columns.Add('ワーキングセット (MB)', 140, 'Right')
-[void]$List.Columns.Add('タブ', 420)
+foreach ($c in $ListColumns) { [void]$List.Columns.Add($c.Title, $c.Width, $c.Align) }
+$List.Add_ColumnClick({
+    param($s, $e)
+    Set-Sort $e.Column
+})
 $Form.Controls.Add($List)
 $Form.Controls.Add($Summary)
 $Form.Add_FormClosing({
@@ -349,16 +412,27 @@ $PopupHead = [FxTray.SmoothLabel]::new()
 $PopupHead.AutoSize = $true
 $PopupHead.Font = [System.Drawing.Font]::new($UiFont, [System.Drawing.FontStyle]::Bold)
 $PopupHead.Margin = [System.Windows.Forms.Padding]::new(0, 0, 0, 6)
-# 表は空白で列を揃えるため、日本語も含む等幅フォントを使う
+# 表は空白で列を揃えるため、日本語も含む等幅フォントを使う。見出し行はクリックで並べ替えるので別ラベルにする
+$PopupCols = [FxTray.SmoothLabel]::new()
+$PopupCols.AutoSize = $true
+$PopupCols.Font = [System.Drawing.Font]::new('BIZ UDGothic', 10)
+$PopupCols.Margin = [System.Windows.Forms.Padding]::new(3, 0, 3, 0)
+$PopupCols.Cursor = [System.Windows.Forms.Cursors]::Hand
+$PopupCols.Add_MouseClick({
+    param($s, $e)
+    if ($e.Button -eq [System.Windows.Forms.MouseButtons]::Left) { Set-Sort $PopupColumns[(Get-PopupColumnAt $e.X)].ListCol }
+})
 $PopupBody = [FxTray.SmoothLabel]::new()
 $PopupBody.AutoSize = $true
-$PopupBody.Font = [System.Drawing.Font]::new('BIZ UDGothic', 10)
+$PopupBody.Font = $PopupCols.Font
+$PopupBody.Margin = [System.Windows.Forms.Padding]::new(3, 0, 3, 0)
 $PopupFoot = [FxTray.SmoothLabel]::new()
 $PopupFoot.AutoSize = $true
 $PopupFoot.Font = $UiFont
 $PopupFoot.ForeColor = [System.Drawing.Color]::Silver
 $PopupFoot.Margin = [System.Windows.Forms.Padding]::new(0, 4, 0, 0)
 $PopupPanel.Controls.Add($PopupHead)
+$PopupPanel.Controls.Add($PopupCols)
 $PopupPanel.Controls.Add($PopupBody)
 $PopupPanel.Controls.Add($PopupFoot)
 $Popup.Controls.Add($PopupPanel)
@@ -369,8 +443,9 @@ $HoverTimer.Interval = 150
 $HoverTimer.Add_Tick({
     $pos = [System.Windows.Forms.Cursor]::Position
     $tol = [System.Windows.Forms.SystemInformation]::SmallIconSize.Width
-    $nearIcon = [Math]::Abs($pos.X - $State.HoverAnchor.X) -le $tol -and [Math]::Abs($pos.Y - $State.HoverAnchor.Y) -le $tol
-    if (-not $nearIcon -and -not $Popup.Bounds.Contains($pos)) {
+    $iconRect = [System.Drawing.Rectangle]::new($State.HoverAnchor.X - $tol, $State.HoverAnchor.Y - $tol, $tol * 2, $tol * 2)
+    # アイコンからポップアップへ移動する途中で消えないよう、両者を囲む範囲にいる間は表示し続ける
+    if (-not [System.Drawing.Rectangle]::Union($iconRect, $Popup.Bounds).Contains($pos)) {
         $Popup.Hide()
         $HoverTimer.Stop()
     }

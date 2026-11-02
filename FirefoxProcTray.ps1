@@ -7,7 +7,7 @@ $CpuAlertSamples  = 5     # 連続でこの回数超えたら通知（既定 2 �
 $ProcMemAlertMB   = 2048  # 単一プロセスのプライベートメモリ
 $AlertCooldownSec = 300   # 同じ内容の通知を繰り返さない間隔
 $PopupTopN        = 10    # ホバー時のポップアップに出すプロセス数
-$PopupTabWidth    = 44    # ポップアップのタブ名の最大幅（半角換算）# Firefox 側の mozilla.cfg が書き出す PID -> タブ名。これより古ければ Firefox 側が止まっているとみなす
+$PopupTabWidth    = 56   # ポップアップのタブ名の最大幅（半角換算）# Firefox 側の mozilla.cfg が書き出す PID -> タブ名。これより古ければ Firefox 側が止まっているとみなす
 $ProcInfoPath     = Join-Path $env:LOCALAPPDATA 'FirefoxProcTray\procinfo.json'
 $ProcInfoMaxAgeSec = 10
 # requestProcInfo の type と、タブ名が取れないときに使うコマンドラインの種類（main / tab）を表示名に変換する
@@ -15,7 +15,7 @@ $TypeLabels = @{
     browser = 'Firefox 本体'; main = 'Firefox 本体'
     web = 'Web ページ'; webIsolated = 'Web ページ'; withCoopCoep = 'Web ページ'; tab = 'Web ページ'
     webServiceWorker = 'サイトの裏処理'; extension = '拡張機能'; gpu = '画面描画'; rdd = '動画・音声'
-    socket = '通信'; utility = '補助処理'; privilegedabout = 'Firefox 内部ページ'
+    socket = 'ネットワーク'; utility = '補助処理'; privilegedabout = 'Firefox 内部ページ'
     privilegedmozilla = 'Mozilla サイト'; file = 'ローカルファイル'; preallocated = '待機中'
 }
 
@@ -154,6 +154,7 @@ function Get-FirefoxSample {
             # if 式の結果は 1 要素だと文字列に展開されるため、外側で配列に包む
             Tabs      = @(if ($info) { $info.tabs | ForEach-Object { ($_ -replace '\s+', ' ').Trim() } })
             Frames    = if ($info) { [int]$info.frames } else { 0 }
+            Site      = if ($info -and $info.site) { [string]$info.site } else { '' }
             # 古い mozilla.cfg の出力には embeddedIn がない。$null をパイプに流すと 1 回処理されるため空要素を除く
             Embedded  = @(if ($info) { $info.embeddedIn | Where-Object { $_ } | ForEach-Object { ($_ -replace '\s+', ' ').Trim() } })
         }
@@ -316,11 +317,15 @@ function Show-List {
     $Form.Activate()
 }
 
-function Format-Cell([string]$s, [int]$width, [switch]$Right) {
-    # 等幅フォントでは全角が半角 2 文字分の幅になるので、その幅で数えて埋める
+# 等幅フォントでは全角が半角 2 文字分の幅になるので、その幅で数える
+function Get-DisplayWidth([string]$s) {
     $w = 0
     foreach ($c in $s.ToCharArray()) { $w += if ([int]$c -gt 0xFF) { 2 } else { 1 } }
-    $pad = ' ' * [Math]::Max(0, $width - $w)
+    $w
+}
+
+function Format-Cell([string]$s, [int]$width, [switch]$Right) {
+    $pad = ' ' * [Math]::Max(0, $width - (Get-DisplayWidth $s))
     if ($Right) { $pad + $s } else { $s + $pad }
 }
 
@@ -333,21 +338,36 @@ function Limit-Width([string]$s, [int]$max) {
     $s
 }
 
-# タブを持たないプロセスは、埋め込み元のタブ名か、埋め込みの件数を表示する
+# タブも埋め込み元のタブも持たないプロセスの表示。サイト名が分かれば何のプロセスかを添える
+function Get-NoTabText($r) {
+    if ($r.Site -and $r.Type -eq $TypeLabels.webServiceWorker) { '{0} の裏処理' -f $r.Site }
+    elseif ($r.Site -and $r.Frames) { '{0} の埋め込み' -f $r.Site }
+    elseif ($r.Site) { $r.Site }
+    elseif ($r.Frames -and $r.Type -eq $TypeLabels.extension) { '拡張機能のページ {0} 件' -f $r.Frames }
+    elseif ($r.Frames) { '埋め込みコンテンツ {0} 件' -f $r.Frames }
+    else { '' }
+}
+
 function Get-TabCell($r) {
-    if ($r.Tabs.Count) { $names = $r.Tabs; $suffix = '' }
-    elseif ($r.Embedded.Count) { $names = $r.Embedded; $suffix = ' の埋め込み' }
-    elseif ($r.Frames) { return '埋め込みコンテンツ {0} 件' -f $r.Frames }
-    else { return '' }
+    if ($r.Tabs.Count) { $names = $r.Tabs; $prefix = ''; $suffix = '' }
+    elseif ($r.Embedded.Count) {
+        $names = $r.Embedded
+        $prefix = if ($r.Site) { $r.Site + '（' } else { '' }
+        $suffix = ' の埋め込み'
+    }
+    else { return Get-NoTabText $r }
     $more = if ($names.Count -gt 1) { ' 他 {0}' -f ($names.Count - 1) } else { '' }
-    (Limit-Width $names[0] ($PopupTabWidth - ($suffix + $more).Length * 2)) + $suffix + $more
+    $tail = $suffix + $more + $(if ($prefix) { '）' } else { '' })
+    # サイト名が長くてもタブ名が読めるよう、最低 10 桁は残す
+    $room = [Math]::Max(10, $PopupTabWidth - (Get-DisplayWidth ($prefix + $tail)))
+    $prefix + (Limit-Width $names[0] $room) + $tail
 }
 
 function Get-TabText($r) {
     if ($r.Tabs.Count) { $r.Tabs -join ' / ' }
+    elseif ($r.Embedded.Count -and $r.Site) { '{0}（{1} の埋め込み）' -f $r.Site, ($r.Embedded -join ' / ') }
     elseif ($r.Embedded.Count) { ($r.Embedded -join ' / ') + ' の埋め込み' }
-    elseif ($r.Frames) { '埋め込みコンテンツ {0} 件' -f $r.Frames }
-    else { '' }
+    else { Get-NoTabText $r }
 }
 
 function Format-PopupLine([string[]]$cells) {

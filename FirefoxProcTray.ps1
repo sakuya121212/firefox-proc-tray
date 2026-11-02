@@ -92,7 +92,7 @@ $ListColumns = @(
     @{ Title = 'CPU %';                Width = 80;  Align = 'Right'; Key = 'Cpu';       Desc = $true }
     @{ Title = '専用メモリ (MB)';      Width = 120; Align = 'Right'; Key = 'PrivateMB'; Desc = $true }
     @{ Title = 'ワーキングセット (MB)'; Width = 140; Align = 'Right'; Key = 'WorkingMB'; Desc = $true }
-    @{ Title = 'タブ';                 Width = 420; Align = 'Left';  Key = { $_.Tabs -join ' / ' }; Desc = $false; EmptyLast = $true }
+    @{ Title = 'タブ';                 Width = 420; Align = 'Left';  Key = { Get-TabText $_ }; Desc = $false; EmptyLast = $true }
 )
 # ポップアップの列。Width は半角換算の桁数（▲▼ 込み）、ListCol は対応する $ListColumns の添字
 $PopupColumns = @(
@@ -154,6 +154,8 @@ function Get-FirefoxSample {
             # if 式の結果は 1 要素だと文字列に展開されるため、外側で配列に包む
             Tabs      = @(if ($info) { $info.tabs | ForEach-Object { ($_ -replace '\s+', ' ').Trim() } })
             Frames    = if ($info) { [int]$info.frames } else { 0 }
+            # 古い mozilla.cfg の出力には embeddedIn がない。$null をパイプに流すと 1 回処理されるため空要素を除く
+            Embedded  = @(if ($info) { $info.embeddedIn | Where-Object { $_ } | ForEach-Object { ($_ -replace '\s+', ' ').Trim() } })
         }
     }
     foreach ($k in @($PrevCpu.Keys))   { if (-not $alive.ContainsKey($k)) { $PrevCpu.Remove($k) } }
@@ -266,8 +268,8 @@ function Get-SortedRows($rows) {
     # 同じ値どうしは PID 順にして、更新のたびに行が入れ替わらないようにする
     $col = $ListColumns[$State.SortCol]
     $keys = @(@{ Expression = $col.Key; Descending = $State.SortDesc }, 'Id')
-    # タブのないプロセス（GPU など）は昇順・降順どちらでも末尾に回す
-    if ($col.EmptyLast) { $keys = @(@{ Expression = { $_.Tabs.Count -gt 0 }; Descending = $true }) + $keys }
+    # タブ列が空のプロセス（GPU など）は昇順・降順どちらでも末尾に回す
+    if ($col.EmptyLast) { $keys = @(@{ Expression = { [bool](Get-TabText $_) }; Descending = $true }) + $keys }
     @($rows | Sort-Object $keys)
 }
 
@@ -298,7 +300,7 @@ function Update-List($rows) {
         [void]$item.SubItems.Add(('{0:N3}' -f $r.Cpu))
         [void]$item.SubItems.Add(('{0:N0}' -f $r.PrivateMB))
         [void]$item.SubItems.Add(('{0:N0}' -f $r.WorkingMB))
-        [void]$item.SubItems.Add($(if ($r.Tabs.Count) { $r.Tabs -join ' / ' } elseif ($r.Frames) { '(iframe {0})' -f $r.Frames } else { '' }))
+        [void]$item.SubItems.Add((Get-TabText $r))
         [void]$List.Items.Add($item)
     }
     $List.EndUpdate()
@@ -331,10 +333,21 @@ function Limit-Width([string]$s, [int]$max) {
     $s
 }
 
+# タブを持たないプロセスは、埋め込み元のタブ名か、埋め込みの件数を表示する
 function Get-TabCell($r) {
-    if ($r.Tabs.Count -eq 0) { return $(if ($r.Frames) { '(iframe {0})' -f $r.Frames } else { '' }) }
-    $more = if ($r.Tabs.Count -gt 1) { ' 他 {0}' -f ($r.Tabs.Count - 1) } else { '' }
-    (Limit-Width $r.Tabs[0] ($PopupTabWidth - $more.Length * 2)) + $more
+    if ($r.Tabs.Count) { $names = $r.Tabs; $suffix = '' }
+    elseif ($r.Embedded.Count) { $names = $r.Embedded; $suffix = ' の埋め込み' }
+    elseif ($r.Frames) { return '埋め込みコンテンツ {0} 件' -f $r.Frames }
+    else { return '' }
+    $more = if ($names.Count -gt 1) { ' 他 {0}' -f ($names.Count - 1) } else { '' }
+    (Limit-Width $names[0] ($PopupTabWidth - ($suffix + $more).Length * 2)) + $suffix + $more
+}
+
+function Get-TabText($r) {
+    if ($r.Tabs.Count) { $r.Tabs -join ' / ' }
+    elseif ($r.Embedded.Count) { ($r.Embedded -join ' / ') + ' の埋め込み' }
+    elseif ($r.Frames) { '埋め込みコンテンツ {0} 件' -f $r.Frames }
+    else { '' }
 }
 
 function Format-PopupLine([string[]]$cells) {

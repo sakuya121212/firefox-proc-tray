@@ -395,6 +395,7 @@ function Update-Popup($rows) {
         $PopupHead.Text = 'Firefox は起動していません'
         $PopupCols.Visible = $false
         $PopupBody.Visible = $false
+        $PopupMore.Visible = $false
         $PopupFoot.Visible = $false
         return
     }
@@ -410,11 +411,10 @@ function Update-Popup($rows) {
     }
     $PopupBody.Text = @($lines) -join "`r`n"
     $PopupBody.Visible = $true
-    $foot = @()
-    if ($rows.Count -gt $PopupTopN) { $foot += 'ほか {0} プロセス' -f ($rows.Count - $PopupTopN) }
-    if (-not $State.TabInfoOk) { $foot += $TabInfoMissingText }
-    $PopupFoot.Text = $foot -join "`r`n"
-    $PopupFoot.Visible = $foot.Count -gt 0
+    $PopupMore.Text = 'ほか {0} プロセス' -f ($rows.Count - $PopupTopN)
+    $PopupMore.Visible = $rows.Count -gt $PopupTopN
+    $PopupFoot.Text = $TabInfoMissingText
+    $PopupFoot.Visible = -not $State.TabInfoOk
 }
 
 function Move-Popup {
@@ -509,6 +509,20 @@ $PopupBody = [FxTray.SmoothLabel]::new()
 $PopupBody.AutoSize = $true
 $PopupBody.Font = $PopupCols.Font
 $PopupBody.Margin = [System.Windows.Forms.Padding]::new(3, 0, 3, 0)
+$PopupMore = [FxTray.SmoothLabel]::new()
+$PopupMore.AutoSize = $true
+$PopupMore.Font = [System.Drawing.Font]::new($UiFont, [System.Drawing.FontStyle]::Underline)
+$PopupMore.ForeColor = [System.Drawing.Color]::Silver
+$PopupMore.Margin = [System.Windows.Forms.Padding]::new(0, 4, 0, 0)
+$PopupMore.Cursor = [System.Windows.Forms.Cursors]::Hand
+$PopupMore.Add_MouseClick({
+    param($s, $e)
+    if ($e.Button -eq [System.Windows.Forms.MouseButtons]::Left) {
+        $Popup.Hide()
+        $HoverTimer.Stop()
+        Show-List
+    }
+})
 $PopupFoot = [FxTray.SmoothLabel]::new()
 $PopupFoot.AutoSize = $true
 $PopupFoot.Font = $UiFont
@@ -517,6 +531,7 @@ $PopupFoot.Margin = [System.Windows.Forms.Padding]::new(0, 4, 0, 0)
 $PopupPanel.Controls.Add($PopupHead)
 $PopupPanel.Controls.Add($PopupCols)
 $PopupPanel.Controls.Add($PopupBody)
+$PopupPanel.Controls.Add($PopupMore)
 $PopupPanel.Controls.Add($PopupFoot)
 $Popup.Controls.Add($PopupPanel)
 

@@ -46,6 +46,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 [-FirefoxDir <
 | 操作 | 動作 |
 |---|---|
 | アイコンにマウスを乗せる | 上位 10 プロセス（PID・種類・CPU(%)・メモリ(MB)・タブ名）をポップアップ表示 |
+| ポップアップの「ほか n プロセス」をクリック | 全プロセスの一覧ウィンドウを表示 |
 | 左クリック | 全プロセスの一覧ウィンドウを表示 |
 | 右クリック | 一覧の表示、通知の ON/OFF、終了 |
 

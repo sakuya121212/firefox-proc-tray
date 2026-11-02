@@ -282,7 +282,7 @@ function Set-Sort([int]$listCol) {
 function Update-List($rows) {
     $cpu = if ($rows.Count) { ($rows | Measure-Object Cpu -Sum).Sum } else { 0 }
     $mem = if ($rows.Count) { ($rows | Measure-Object PrivateMB -Sum).Sum } else { 0 }
-    $Summary.Text = '合計 CPU {0:N1}%    専用メモリ {1:N0} MB    {2} プロセス    {3} 秒ごとに更新' -f $cpu, $mem, $rows.Count, $IntervalSec
+    $Summary.Text = '合計 CPU {0:N3}%    専用メモリ {1:N0} MB    {2} プロセス    {3} 秒ごとに更新' -f $cpu, $mem, $rows.Count, $IntervalSec
     if (-not $State.TabInfoOk) { $Summary.Text += '    ※ ' + $TabInfoMissingText }
     for ($i = 0; $i -lt $ListColumns.Count; $i++) {
         $mark = if ($i -ne $State.SortCol) { '' } elseif ($State.SortDesc) { ' ▼' } else { ' ▲' }
@@ -295,7 +295,7 @@ function Update-List($rows) {
     foreach ($r in $sorted) {
         $item = [System.Windows.Forms.ListViewItem]::new([string]$r.Id)
         [void]$item.SubItems.Add($r.Type)
-        [void]$item.SubItems.Add(('{0:N1}' -f $r.Cpu))
+        [void]$item.SubItems.Add(('{0:N3}' -f $r.Cpu))
         [void]$item.SubItems.Add(('{0:N0}' -f $r.PrivateMB))
         [void]$item.SubItems.Add(('{0:N0}' -f $r.WorkingMB))
         [void]$item.SubItems.Add($(if ($r.Tabs.Count) { $r.Tabs -join ' / ' } elseif ($r.Frames) { '(iframe {0})' -f $r.Frames } else { '' }))
@@ -371,13 +371,13 @@ function Update-Popup($rows) {
     }
     $cpu = ($rows | Measure-Object Cpu -Sum).Sum
     $mem = ($rows | Measure-Object PrivateMB -Sum).Sum
-    $PopupHead.Text = 'Firefox   CPU {0:N1}%   メモリ {1:N0} MB   {2} プロセス' -f $cpu, $mem, $rows.Count
+    $PopupHead.Text = 'Firefox   CPU {0:N3}%   メモリ {1:N0} MB   {2} プロセス' -f $cpu, $mem, $rows.Count
     $PopupCols.Text = Format-PopupLine @($PopupColumns | ForEach-Object {
         $_.Title + $(if ($_.ListCol -ne $State.SortCol) { '' } elseif ($State.SortDesc) { '▼' } else { '▲' })
     })
     $PopupCols.Visible = $true
     $lines = foreach ($r in @(Get-SortedRows $rows | Select-Object -First $PopupTopN)) {
-        Format-PopupLine @([string]$r.Id, $r.Type, ('{0:N1}' -f $r.Cpu), ('{0:N0}' -f $r.PrivateMB), (Get-TabCell $r))
+        Format-PopupLine @([string]$r.Id, $r.Type, ('{0:N3}' -f $r.Cpu), ('{0:N0}' -f $r.PrivateMB), (Get-TabCell $r))
     }
     $PopupBody.Text = @($lines) -join "`r`n"
     $PopupBody.Visible = $true

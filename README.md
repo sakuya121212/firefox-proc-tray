@@ -51,6 +51,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 [-FirefoxDir <
 
 「専用メモリ」はプロセスが専有しているメモリ（Private Bytes）で、タスクマネージャーの「コミット サイズ」に相当します。about:processes とは計算方法が異なるため、数値は一致しないことがあります。
 
+CPU 使用率は PC 全体を 100% とした値です。about:processes は 1 コアを 100% とするため、値はコア数倍ほど大きく表示されます。
+
 通知のしきい値などは `FirefoxProcTray.ps1` 冒頭の変数で変更できます。
 
 | 変数 | 既定値 | 内容 |

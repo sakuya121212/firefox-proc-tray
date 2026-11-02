@@ -138,7 +138,8 @@ function Get-FirefoxSample {
         try { $ticks = $p.TotalProcessorTime.Ticks } catch { continue }
         $cpu = 0.0
         if ($elapsed -gt 0 -and $PrevCpu.ContainsKey($p.Id)) {
-            $cpu = [Math]::Max(0, ($ticks - $PrevCpu[$p.Id]) / 1e7 / $elapsed / $Cores * 100)
+            # 0 と書くと整数版の Max が選ばれて小数が丸められるため 0.0 にする
+            $cpu = [Math]::Max(0.0, ($ticks - $PrevCpu[$p.Id]) / 1e7 / $elapsed / $Cores * 100)
         }
         $PrevCpu[$p.Id] = $ticks
         $info = if ($procInfo) { $procInfo[$p.Id] } else { $null }

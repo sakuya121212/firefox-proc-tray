@@ -88,7 +88,7 @@ $State     = @{ TabInfoOk = $false; PrevTime = $null; HighCount = 0; IconHandle 
 # 一覧ウィンドウの列。Desc は最初にクリックしたときの並び順（数値は大きい順、文字は昇順）
 $ListColumns = @(
     @{ Title = 'PID';                  Width = 80;  Align = 'Left';  Key = 'Id';        Desc = $false }
-    @{ Title = '役割';                 Width = 140; Align = 'Left';  Key = 'Type';      Desc = $false }
+    @{ Title = '種類';                 Width = 140; Align = 'Left';  Key = 'Type';      Desc = $false }
     @{ Title = 'CPU %';                Width = 80;  Align = 'Right'; Key = 'Cpu';       Desc = $true }
     @{ Title = '専用メモリ (MB)';      Width = 120; Align = 'Right'; Key = 'PrivateMB'; Desc = $true }
     @{ Title = 'ワーキングセット (MB)'; Width = 140; Align = 'Right'; Key = 'WorkingMB'; Desc = $true }
@@ -97,7 +97,7 @@ $ListColumns = @(
 # ポップアップの列。Width は半角換算の桁数（▲▼ 込み）、ListCol は対応する $ListColumns の添字
 $PopupColumns = @(
     @{ Title = 'PID';            Width = 7;  Right = $false; ListCol = 0 }
-    @{ Title = '役割';           Width = 18; Right = $false; ListCol = 1 }
+    @{ Title = '種類';           Width = 18; Right = $false; ListCol = 1 }
     @{ Title = 'CPU%';           Width = 7;  Right = $true;  ListCol = 2 }
     @{ Title = '専用メモリ(MB)'; Width = 16; Right = $true;  ListCol = 3 }
     @{ Title = 'タブ';           Width = 0;  Right = $false; ListCol = 5 }

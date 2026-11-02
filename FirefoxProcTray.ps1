@@ -343,8 +343,7 @@ function Get-NoTabText($r) {
     if ($r.Site -and $r.Type -eq $TypeLabels.webServiceWorker) { '{0} の裏処理' -f $r.Site }
     elseif ($r.Site -and $r.Frames) { '{0} の埋め込み' -f $r.Site }
     elseif ($r.Site) { $r.Site }
-    elseif ($r.Frames -and $r.Type -eq $TypeLabels.extension) { '拡張機能のページ {0} 件' -f $r.Frames }
-    elseif ($r.Frames) { '埋め込みコンテンツ {0} 件' -f $r.Frames }
+    elseif ($r.Frames -and $r.Type -ne $TypeLabels.extension) { '埋め込みコンテンツ {0} 件' -f $r.Frames }
     else { '' }
 }
 

@@ -10,9 +10,14 @@ $PopupTopN        = 10    # ホバー時のポップアップに出すプロセ�
 $PopupTabWidth    = 44    # ポップアップのタブ名の最大幅（半角換算）# Firefox 側の mozilla.cfg が書き出す PID -> タブ名。これより古ければ Firefox 側が止まっているとみなす
 $ProcInfoPath     = Join-Path $env:LOCALAPPDATA 'FirefoxProcTray\procinfo.json'
 $ProcInfoMaxAgeSec = 10
-# requestProcInfo の type を表示用の短い名前に
-$TypeLabels = @{ browser = 'main'; webIsolated = 'isolated'; webServiceWorker = 'sw'; withCoopCoep = 'coop'
-                 privilegedabout = 'about'; privilegedmozilla = 'mozilla'; preallocated = 'prealloc' }
+# requestProcInfo の type と、タブ名が取れないときに使うコマンドラインの種類（main / tab）を表示名に変換する
+$TypeLabels = @{
+    browser = 'Firefox 本体'; main = 'Firefox 本体'
+    web = 'Web ページ'; webIsolated = 'Web ページ'; withCoopCoep = 'Web ページ'; tab = 'Web ページ'
+    webServiceWorker = 'サイトの裏処理'; extension = '拡張機能'; gpu = '画面描画'; rdd = '動画・音声'
+    socket = '通信'; utility = '補助処理'; privilegedabout = 'Firefox 内部ページ'
+    privilegedmozilla = 'Mozilla サイト'; file = 'ローカルファイル'; preallocated = '待機中'
+}
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
@@ -83,7 +88,7 @@ $State     = @{ TabInfoOk = $false; PrevTime = $null; HighCount = 0; IconHandle 
 # 一覧ウィンドウの列。Desc は最初にクリックしたときの並び順（数値は大きい順、文字は昇順）
 $ListColumns = @(
     @{ Title = 'PID';                  Width = 80;  Align = 'Left';  Key = 'Id';        Desc = $false }
-    @{ Title = '種類';                 Width = 90;  Align = 'Left';  Key = 'Type';      Desc = $false }
+    @{ Title = '役割';                 Width = 140; Align = 'Left';  Key = 'Type';      Desc = $false }
     @{ Title = 'CPU %';                Width = 80;  Align = 'Right'; Key = 'Cpu';       Desc = $true }
     @{ Title = '専用メモリ (MB)';      Width = 120; Align = 'Right'; Key = 'PrivateMB'; Desc = $true }
     @{ Title = 'ワーキングセット (MB)'; Width = 140; Align = 'Right'; Key = 'WorkingMB'; Desc = $true }
@@ -92,7 +97,7 @@ $ListColumns = @(
 # ポップアップの列。Width は半角換算の桁数（▲▼ 込み）、ListCol は対応する $ListColumns の添字
 $PopupColumns = @(
     @{ Title = 'PID';            Width = 7;  Right = $false; ListCol = 0 }
-    @{ Title = '種類';           Width = 9;  Right = $false; ListCol = 1 }
+    @{ Title = '役割';           Width = 18; Right = $false; ListCol = 1 }
     @{ Title = 'CPU%';           Width = 7;  Right = $true;  ListCol = 2 }
     @{ Title = '専用メモリ(MB)'; Width = 16; Right = $true;  ListCol = 3 }
     @{ Title = 'タブ';           Width = 0;  Right = $false; ListCol = 5 }
@@ -137,8 +142,8 @@ function Get-FirefoxSample {
         }
         $PrevCpu[$p.Id] = $ticks
         $info = if ($procInfo) { $procInfo[$p.Id] } else { $null }
-        $type = if ($info -and $info.type) { if ($TypeLabels.ContainsKey($info.type)) { $TypeLabels[$info.type] } else { $info.type } }
-                elseif ($TypeCache.ContainsKey($p.Id)) { $TypeCache[$p.Id] } else { '?' }
+        $type = if ($info -and $info.type) { $info.type } elseif ($TypeCache.ContainsKey($p.Id)) { $TypeCache[$p.Id] } else { '?' }
+        if ($TypeLabels.ContainsKey($type)) { $type = $TypeLabels[$type] }
         [pscustomobject]@{
             Id        = $p.Id
             Type      = $type
@@ -416,7 +421,7 @@ function Show-Popup {
 # --- 一覧ウィンドウ ---
 $Form = [System.Windows.Forms.Form]::new()
 $Form.Text = 'Firefox プロセス'
-$Form.Size = [System.Drawing.Size]::new(980, 520)
+$Form.Size = [System.Drawing.Size]::new(1030, 520)
 $Form.StartPosition = 'Manual'
 $Form.Font = $UiFont
 $Summary = [System.Windows.Forms.Label]::new()

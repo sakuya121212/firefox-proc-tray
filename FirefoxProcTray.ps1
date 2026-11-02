@@ -19,6 +19,11 @@ Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
 # 既定の MS UI Gothic や Yu Gothic UI は GDI 描画の小さいサイズでギザつくため Meiryo UI を使う
 $UiFont = [System.Drawing.Font]::new('Meiryo UI', 9)
+# トレイアイコンの配色（オレンジ → 赤 → 赤紫。未起動時は灰色）
+$IconColors = @{
+    On  = @([System.Drawing.Color]::FromArgb(255, 149, 0), [System.Drawing.Color]::FromArgb(255, 48, 72), [System.Drawing.Color]::FromArgb(205, 30, 120))
+    Off = @([System.Drawing.Color]::FromArgb(150, 150, 150), [System.Drawing.Color]::FromArgb(125, 125, 125), [System.Drawing.Color]::FromArgb(100, 100, 100))
+}
 Add-Type -Namespace FxTray -Name Native -MemberDefinition @'
 [System.Runtime.InteropServices.DllImport("user32.dll")]
 public static extern bool DestroyIcon(System.IntPtr hIcon);
@@ -151,38 +156,81 @@ function Get-FirefoxSample {
     @($rows | Sort-Object Cpu, PrivateMB -Descending)
 }
 
-function Set-TrayIcon([string]$text, [System.Drawing.Color]$back) {
-    $key = "$text|$back"
-    if ($key -eq $State.IconKey) { return }
-    $size = [System.Windows.Forms.SystemInformation]::SmallIconSize.Width
-    $bmp = [System.Drawing.Bitmap]::new($size, $size)
-    $g = [System.Drawing.Graphics]::FromImage($bmp)
-    $g.Clear($back)
-    $g.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::AntiAliasGridFit
-    $font = [System.Drawing.Font]::new('Segoe UI', [float]($size * 0.62), [System.Drawing.FontStyle]::Bold, [System.Drawing.GraphicsUnit]::Pixel)
-    $fmt = [System.Drawing.StringFormat]::new()
-    $fmt.Alignment = 'Center'
-    $fmt.LineAlignment = 'Center'
-    $g.DrawString($text, $font, [System.Drawing.Brushes]::White, [System.Drawing.RectangleF]::new(0, 0, $size, $size), $fmt)
-    $g.Dispose(); $font.Dispose(); $fmt.Dispose()
+# 8 倍で描いて縮小し、16px でも輪郭を保つ。Firefox を連想させる配色の角丸に白いキツネの顔（ロゴではない独自の図形）を描く
+function New-TrayBitmap([int]$size, [string]$status) {
+    $s = $size * 8
+    $big = [System.Drawing.Bitmap]::new($s, $s, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    $g = [System.Drawing.Graphics]::FromImage($big)
+    $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+    $g.Clear([System.Drawing.Color]::Transparent)
+
+    $colors = if ($status -eq 'off') { $IconColors.Off } else { $IconColors.On }
+    $d = $s * 0.48
+    $path = [System.Drawing.Drawing2D.GraphicsPath]::new()
+    $path.AddArc(0, 0, $d, $d, 180, 90)
+    $path.AddArc($s - $d, 0, $d, $d, 270, 90)
+    $path.AddArc($s - $d, $s - $d, $d, $d, 0, 90)
+    $path.AddArc(0, $s - $d, $d, $d, 90, 90)
+    $path.CloseFigure()
+    $back = [System.Drawing.Drawing2D.LinearGradientBrush]::new([System.Drawing.PointF]::new(0, 0), [System.Drawing.PointF]::new($s, $s), $colors[0], $colors[2])
+    $blend = [System.Drawing.Drawing2D.ColorBlend]::new(3)
+    $blend.Colors = [System.Drawing.Color[]]$colors
+    $blend.Positions = [single[]]@(0, 0.55, 1)
+    $back.InterpolationColors = $blend
+    $g.FillPath($back, $path)
+
+    # キツネの顔。座標は幅 1 の枠内の値で、枠の外周に 14% の余白を取る
+    $fox = 0.08, 0.06, 0.34, 0.30, 0.66, 0.30, 0.92, 0.06, 0.96, 0.52, 0.50, 0.96, 0.04, 0.52
+    $points = for ($i = 0; $i -lt $fox.Count; $i += 2) {
+        [System.Drawing.PointF]::new([float]((0.14 + $fox[$i] * 0.72) * $s), [float]((0.14 + $fox[$i + 1] * 0.72) * $s))
+    }
+    $g.FillPolygon([System.Drawing.Brushes]::White, [System.Drawing.PointF[]]$points)
+    $eye = [System.Drawing.SolidBrush]::new($colors[1])
+    foreach ($x in 0.37, 0.63) {
+        $g.FillEllipse($eye, [float](($x - 0.055) * $s), [float](0.47 * $s), [float](0.11 * $s), [float](0.11 * $s))
+    }
+
+    if ($status -eq 'alert') {
+        # 高負荷の印。赤い点の周囲を透明に抜いて、背景のグラデーションと区別しやすくする
+        $dot = $s * 0.35
+        $x = $s - $dot
+        $edge = $s * 0.06
+        $g.CompositingMode = [System.Drawing.Drawing2D.CompositingMode]::SourceCopy
+        $clear = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::Transparent)
+        $g.FillEllipse($clear, [float]($x - $edge), [float]($x - $edge), [float]($dot + 2 * $edge), [float]($dot + 2 * $edge))
+        $g.CompositingMode = [System.Drawing.Drawing2D.CompositingMode]::SourceOver
+        $red = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb(220, 20, 40))
+        $g.FillEllipse($red, [float]$x, [float]$x, [float]$dot, [float]$dot)
+        $clear.Dispose(); $red.Dispose()
+    }
+    $eye.Dispose(); $back.Dispose(); $path.Dispose(); $g.Dispose()
+
+    $bmp = [System.Drawing.Bitmap]::new($size, $size, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    $h = [System.Drawing.Graphics]::FromImage($bmp)
+    $h.CompositingMode = [System.Drawing.Drawing2D.CompositingMode]::SourceCopy
+    $h.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+    $h.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+    $h.DrawImage($big, [System.Drawing.Rectangle]::new(0, 0, $size, $size))
+    $h.Dispose(); $big.Dispose()
+    $bmp
+}
+
+# $status: off（Firefox 未起動）/ normal / alert（合計 CPU がしきい値以上）
+function Set-TrayIcon([string]$status) {
+    if ($status -eq $State.IconKey) { return }
+    $bmp = New-TrayBitmap ([System.Windows.Forms.SystemInformation]::SmallIconSize.Width) $status
     $handle = $bmp.GetHicon()
     $bmp.Dispose()
     $Notify.Icon = [System.Drawing.Icon]::FromHandle($handle)
     # Icon.FromHandle はハンドルを所有しないため、差し替えた古いハンドルは自前で解放する
     if ($State.IconHandle -ne [IntPtr]::Zero) { [void][FxTray.Native]::DestroyIcon($State.IconHandle) }
     $State.IconHandle = $handle
-    $State.IconKey = $key
+    $State.IconKey = $status
 }
 
 function Update-Tray($rows, [double]$cpu) {
-    if ($rows.Count -eq 0) {
-        Set-TrayIcon '-' ([System.Drawing.Color]::Gray)
-        return
-    }
-    $color = if ($cpu -ge $CpuAlertPercent) { [System.Drawing.Color]::Firebrick }
-             elseif ($cpu -ge $CpuAlertPercent / 2) { [System.Drawing.Color]::DarkOrange }
-             else { [System.Drawing.Color]::SeaGreen }
-    Set-TrayIcon ([string][Math]::Min(99, [Math]::Round($cpu))) $color
+    $status = if ($rows.Count -eq 0) { 'off' } elseif ($cpu -ge $CpuAlertPercent) { 'alert' } else { 'normal' }
+    Set-TrayIcon $status
 }
 
 function Send-Alert([string]$key, [string]$title, [string]$text) {
@@ -502,7 +550,7 @@ $MenuExit.Add_Click({
     [System.Windows.Forms.Application]::Exit()
 })
 
-Set-TrayIcon '-' ([System.Drawing.Color]::Gray)
+Set-TrayIcon 'off'
 $Notify.Visible = $true
 $Timer.Start()
 [System.Windows.Forms.Application]::Run([System.Windows.Forms.ApplicationContext]::new())

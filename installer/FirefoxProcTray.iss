@@ -45,6 +45,10 @@ english.RestartFirefox=To show tab names, quit Firefox completely and start it a
 Name: "autoconfig"; Description: "{cm:TaskAutoconfig}"
 Name: "startup"; Description: "{cm:TaskStartup}"
 
+[InstallDelete]
+; Inno Setup は再インストール時にタスクを外しても前回のショートカットを消さないため、明示的に削除する
+Type: files; Name: "{userstartup}\FirefoxProcTray.lnk"; Tasks: not startup
+
 [Files]
 Source: "..\FirefoxProcTray.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\install.ps1"; DestDir: "{app}"; Flags: ignoreversion

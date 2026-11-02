@@ -45,13 +45,35 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 [-FirefoxDir <
 
 | 操作 | 動作 |
 |---|---|
-| アイコンにマウスを乗せる | 上位 10 プロセス（PID・種類・CPU%・専用メモリ・タブ名）をポップアップ表示 |
+| アイコンにマウスを乗せる | 上位 10 プロセス（PID・種類・CPU%・メモリ・タブ名）をポップアップ表示 |
 | 左クリック | 全プロセスの一覧ウィンドウを表示 |
 | 右クリック | 一覧の表示、通知の ON/OFF、終了 |
 
-「専用メモリ」はプロセスが専有しているメモリ（Private Bytes）で、タスクマネージャーの「コミット サイズ」に相当します。about:processes とは計算方法が異なるため、数値は一致しないことがあります。
+### 表示と正式な用語の対応
 
-CPU 使用率は PC 全体を 100% とした値です。about:processes は 1 コアを 100% とするため、値はコア数倍ほど大きく表示されます。
+| 表示 | 正式な用語・定義 | 補足 |
+|---|---|---|
+| メモリ | Private Bytes（.NET の `PrivateMemorySize64`） | プロセスが専有しているメモリです。タスクマネージャーの「詳細」タブの「コミット サイズ」に相当します。about:processes とは計算方法が異なるため、数値は一致しないことがあります |
+| CPU% | CPU 時間の増分 ÷ 経過時間 ÷ 論理コア数 | PC 全体を 100% とした値です。about:processes は 1 コアを 100% とするため、値はコア数倍ほど大きく表示されます |
+
+「種類」の表示と、Firefox の内部名（`ChromeUtils.requestProcInfo()` の `type`）の対応は次のとおりです。一覧にない内部名は、そのまま表示します。
+
+| 種類の表示 | Firefox の内部名 | 説明 |
+|---|---|---|
+| Firefox 本体 | `browser` | 画面やタブを管理するメインプロセス |
+| Web ページ | `web` / `webIsolated` / `withCoopCoep` | Web コンテンツのプロセス |
+| サイトの裏処理 | `webServiceWorker` | Service Worker のプロセス |
+| 拡張機能 | `extension` | 拡張機能のプロセス |
+| 画面描画 | `gpu` | GPU プロセス |
+| 動画・音声 | `rdd` | メディアをデコードする RDD（Remote Data Decoder）プロセス |
+| ネットワーク | `socket` | ネットワーク通信のプロセス |
+| 補助処理 | `utility` | ユーティリティプロセス |
+| Firefox 内部ページ | `privilegedabout` | about: で始まるページなどのプロセス |
+| Mozilla サイト | `privilegedmozilla` | 特権を持つ Mozilla サイトのプロセス |
+| ローカルファイル | `file` | ローカルファイルを開くプロセス |
+| 待機中 | `preallocated` | 事前に用意された、未使用のプロセス |
+
+### 設定
 
 通知のしきい値などは `FirefoxProcTray.ps1` 冒頭の変数で変更できます。
 
@@ -59,7 +81,7 @@ CPU 使用率は PC 全体を 100% とした値です。about:processes は 1 �
 |---|---|---|
 | `$IntervalSec` | 2 | 更新間隔（秒） |
 | `$CpuAlertPercent` / `$CpuAlertSamples` | 50 / 5 | Firefox 全体の CPU 使用率がこの値以上の状態が、この回数続いたら通知する |
-| `$ProcMemAlertMB` | 2048 | 1 プロセスの専用メモリがこの値以上になったら通知する |
+| `$ProcMemAlertMB` | 2048 | 1 プロセスのメモリがこの値以上になったら通知する |
 | `$AlertCooldownSec` | 300 | 同じ内容の通知を繰り返さない間隔（秒） |
 | `$PopupTopN` | 10 | ポップアップに表示するプロセス数 |
 

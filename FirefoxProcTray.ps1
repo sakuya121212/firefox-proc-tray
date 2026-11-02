@@ -90,8 +90,7 @@ $ListColumns = @(
     @{ Title = 'PID';                  Width = 80;  Align = 'Left';  Key = 'Id';        Desc = $false }
     @{ Title = '種類';                 Width = 140; Align = 'Left';  Key = 'Type';      Desc = $false }
     @{ Title = 'CPU %';                Width = 80;  Align = 'Right'; Key = 'Cpu';       Desc = $true }
-    @{ Title = '専用メモリ (MB)';      Width = 120; Align = 'Right'; Key = 'PrivateMB'; Desc = $true }
-    @{ Title = 'ワーキングセット (MB)'; Width = 140; Align = 'Right'; Key = 'WorkingMB'; Desc = $true }
+    @{ Title = 'メモリ (MB)';          Width = 120; Align = 'Right'; Key = 'PrivateMB'; Desc = $true }
     @{ Title = 'タブ';                 Width = 420; Align = 'Left';  Key = { Get-TabText $_ }; Desc = $false; EmptyLast = $true }
 )
 # ポップアップの列。Width は半角換算の桁数（▲▼ 込み）、ListCol は対応する $ListColumns の添字
@@ -99,8 +98,8 @@ $PopupColumns = @(
     @{ Title = 'PID';            Width = 7;  Right = $false; ListCol = 0 }
     @{ Title = '種類';           Width = 18; Right = $false; ListCol = 1 }
     @{ Title = 'CPU%';           Width = 7;  Right = $true;  ListCol = 2 }
-    @{ Title = '専用メモリ(MB)'; Width = 16; Right = $true;  ListCol = 3 }
-    @{ Title = 'タブ';           Width = 0;  Right = $false; ListCol = 5 }
+    @{ Title = 'メモリ(MB)';     Width = 12; Right = $true;  ListCol = 3 }
+    @{ Title = 'タブ';           Width = 0;  Right = $false; ListCol = 4 }
 )
 
 function Read-ProcInfo {
@@ -150,7 +149,6 @@ function Get-FirefoxSample {
             Type      = $type
             Cpu       = $cpu
             PrivateMB = $p.PrivateMemorySize64 / 1MB
-            WorkingMB = $p.WorkingSet64 / 1MB
             # if 式の結果は 1 要素だと文字列に展開されるため、外側で配列に包む
             Tabs      = @(if ($info) { $info.tabs | ForEach-Object { ($_ -replace '\s+', ' ').Trim() } })
             Frames    = if ($info) { [int]$info.frames } else { 0 }
@@ -285,7 +283,7 @@ function Set-Sort([int]$listCol) {
 function Update-List($rows) {
     $cpu = if ($rows.Count) { ($rows | Measure-Object Cpu -Sum).Sum } else { 0 }
     $mem = if ($rows.Count) { ($rows | Measure-Object PrivateMB -Sum).Sum } else { 0 }
-    $Summary.Text = '合計 CPU {0:N3}%    専用メモリ {1:N0} MB    {2} プロセス    {3} 秒ごとに更新' -f $cpu, $mem, $rows.Count, $IntervalSec
+    $Summary.Text = '合計 CPU {0:N3}%    メモリ {1:N0} MB    {2} プロセス    {3} 秒ごとに更新' -f $cpu, $mem, $rows.Count, $IntervalSec
     if (-not $State.TabInfoOk) { $Summary.Text += '    ※ ' + $TabInfoMissingText }
     for ($i = 0; $i -lt $ListColumns.Count; $i++) {
         $mark = if ($i -ne $State.SortCol) { '' } elseif ($State.SortDesc) { ' ▼' } else { ' ▲' }
@@ -300,7 +298,6 @@ function Update-List($rows) {
         [void]$item.SubItems.Add($r.Type)
         [void]$item.SubItems.Add(('{0:N3}' -f $r.Cpu))
         [void]$item.SubItems.Add(('{0:N0}' -f $r.PrivateMB))
-        [void]$item.SubItems.Add(('{0:N0}' -f $r.WorkingMB))
         [void]$item.SubItems.Add((Get-TabText $r))
         [void]$List.Items.Add($item)
     }
@@ -454,7 +451,7 @@ function Show-Popup {
 # --- 一覧ウィンドウ ---
 $Form = [System.Windows.Forms.Form]::new()
 $Form.Text = 'Firefox プロセス'
-$Form.Size = [System.Drawing.Size]::new(1030, 520)
+$Form.Size = [System.Drawing.Size]::new(890, 520)
 $Form.StartPosition = 'Manual'
 $Form.Font = $UiFont
 $Summary = [System.Windows.Forms.Label]::new()

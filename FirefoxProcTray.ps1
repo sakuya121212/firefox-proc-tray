@@ -89,15 +89,15 @@ $State     = @{ TabInfoOk = $false; PrevTime = $null; HighCount = 0; IconHandle 
 $ListColumns = @(
     @{ Title = 'PID';                  Width = 80;  Align = 'Left';  Key = 'Id';        Desc = $false }
     @{ Title = '種類';                 Width = 140; Align = 'Left';  Key = 'Type';      Desc = $false }
-    @{ Title = 'CPU %';                Width = 80;  Align = 'Right'; Key = 'Cpu';       Desc = $true }
-    @{ Title = 'メモリ (MB)';          Width = 120; Align = 'Right'; Key = 'PrivateMB'; Desc = $true }
+    @{ Title = 'CPU(%)';               Width = 80;  Align = 'Right'; Key = 'Cpu';       Desc = $true }
+    @{ Title = 'メモリ(MB)';           Width = 120; Align = 'Right'; Key = 'PrivateMB'; Desc = $true }
     @{ Title = 'タブ';                 Width = 420; Align = 'Left';  Key = { Get-TabText $_ }; Desc = $false; EmptyLast = $true }
 )
 # ポップアップの列。Width は半角換算の桁数（▲▼ 込み）、ListCol は対応する $ListColumns の添字
 $PopupColumns = @(
     @{ Title = 'PID';            Width = 7;  Right = $false; ListCol = 0 }
     @{ Title = '種類';           Width = 18; Right = $false; ListCol = 1 }
-    @{ Title = 'CPU%';           Width = 7;  Right = $true;  ListCol = 2 }
+    @{ Title = 'CPU(%)';         Width = 8;  Right = $true;  ListCol = 2 }
     @{ Title = 'メモリ(MB)';     Width = 12; Right = $true;  ListCol = 3 }
     @{ Title = 'タブ';           Width = 0;  Right = $false; ListCol = 4 }
 )

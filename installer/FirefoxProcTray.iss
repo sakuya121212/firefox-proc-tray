@@ -67,6 +67,30 @@ Name: "{userstartup}\FirefoxProcTray"; Filename: "{sys}\WindowsPowerShell\v1.0\p
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\uninstall.ps1"""; Flags: runhidden waituntilterminated; RunOnceId: "UninstallScript"
 
 [Code]
+const
+  BCM_SETSHIELD = $160C;
+
+var
+  ShieldShown: Boolean;
+
+procedure CurPageChanged(CurPageID: Integer);
+var
+  Show: Boolean;
+  Extra: Integer;
+begin
+  Show := (CurPageID = wpReady) and WizardIsTaskSelected('autoconfig');
+  if Show = ShieldShown then Exit;
+  ShieldShown := Show;
+  { 昇格するのは Inno Setup ではなくインストール後の install.ps1 なので、Inno Setup は盾を自動では付けない }
+  SendMessage(WizardForm.NextButton.Handle, BCM_SETSHIELD, 0, Ord(Show));
+  { 盾の分だけボタンを左に広げる。位置は相対的に動かし、ウィザードのリサイズによる移動を壊さない }
+  Extra := ScaleX(24);
+  if not Show then Extra := -Extra;
+  WizardForm.NextButton.Width := WizardForm.NextButton.Width + Extra;
+  WizardForm.NextButton.Left := WizardForm.NextButton.Left - Extra;
+  WizardForm.BackButton.Left := WizardForm.BackButton.Left - Extra;
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   Command, Params: String;

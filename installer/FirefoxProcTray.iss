@@ -32,8 +32,8 @@ Name: "japanese"; MessagesFile: "compiler:Languages\Japanese.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [CustomMessages]
-japanese.TaskAutoconfig=タブ名を表示する（Firefox に autoconfig を配置します。管理者権限の確認が出ます）
-english.TaskAutoconfig=Show tab names (installs a Firefox autoconfig; requires administrator approval)
+japanese.TaskAutoconfig=タブ名を表示する（Firefox に autoconfig を配置します）
+english.TaskAutoconfig=Show tab names (installs a Firefox autoconfig)
 japanese.TaskStartup=Windows へのサインイン時に起動する
 english.TaskStartup=Start when signing in to Windows
 japanese.SetupFailed=設定の一部に失敗しました（終了コード %1）。%n詳細は PowerShell で次を実行して確認してください:%n%n%2
@@ -69,15 +69,86 @@ Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile
 [Code]
 const
   BCM_SETSHIELD = $160C;
+  LB_GETITEMHEIGHT = $01A1;
+  IDI_SHIELD = 32518;
+  DI_NORMAL = 3;
 
 var
   ShieldShown: Boolean;
+  TaskShield: TPanel;
+
+function LoadIconWithScaleDown(Inst, Name: THandle; cx, cy: Integer; var Icon: THandle): Integer;
+  external 'LoadIconWithScaleDown@comctl32.dll stdcall';
+function DrawIconEx(DC: THandle; X, Y: Integer; Icon: THandle; cx, cy: Integer; Step: Cardinal; Brush: THandle; Flags: Cardinal): Integer;
+  external 'DrawIconEx@user32.dll stdcall';
+function DestroyIcon(Icon: THandle): Integer;
+  external 'DestroyIcon@user32.dll stdcall';
+
+{ タスク一覧の項目には画像を付けられないため、見出しの先頭に空白を足し、そこへ盾の画像を重ねる }
+procedure AddTaskShield;
+var
+  List: TNewCheckListBox;
+  Probe: TNewStaticText;
+  Image: TBitmapImage;
+  Icon: THandle;
+  Index, I, Size, Border, ItemTop, ItemHeight: Integer;
+  Pad: String;
+begin
+  if TaskShield <> nil then Exit;
+  List := WizardForm.TasksList;
+  Index := List.Items.IndexOf(CustomMessage('TaskAutoconfig'));
+  if Index < 0 then Exit;
+  Size := ScaleX(16);
+  if LoadIconWithScaleDown(0, IDI_SHIELD, Size, Size, Icon) <> 0 then Exit;
+  try
+    Probe := TNewStaticText.Create(WizardForm);
+    try
+      Probe.Parent := List.Parent;
+      Probe.Font := List.Font;
+      Pad := '';
+      for I := 1 to 20 do begin
+        Pad := Pad + ' ';
+        Probe.Caption := Pad;
+        if Probe.Width >= Size + ScaleX(4) then Break;
+      end;
+    finally
+      Probe.Free;
+    end;
+    List.ItemCaption[Index] := Pad + List.ItemCaption[Index];
+
+    ItemTop := 0;
+    for I := 0 to Index - 1 do
+      ItemTop := ItemTop + SendMessage(List.Handle, LB_GETITEMHEIGHT, I, 0);
+    ItemHeight := SendMessage(List.Handle, LB_GETITEMHEIGHT, Index, 0);
+    Border := (List.Width - List.ClientWidth) div 2;
+    { 一覧の前面に置くため、子ではなく兄弟のウィンドウにする。文字の開始位置はチェックボックス幅（13px）+ 余白（4px × 2）+ 2px }
+    TaskShield := TPanel.Create(WizardForm);
+    TaskShield.Parent := List.Parent;
+    TaskShield.BevelOuter := bvNone;
+    TaskShield.Color := List.Color;
+    TaskShield.SetBounds(List.Left + Border + ScaleX(13) + ScaleX(8) + 2,
+                         List.Top + Border + ItemTop + (ItemHeight - Size) div 2, Size, Size);
+    Image := TBitmapImage.Create(WizardForm);
+    Image.Parent := TaskShield;
+    Image.Align := alClient;
+    Image.Bitmap.Width := Size;
+    Image.Bitmap.Height := Size;
+    Image.Bitmap.Canvas.Brush.Color := List.Color;
+    Image.Bitmap.Canvas.Pen.Color := List.Color;
+    Image.Bitmap.Canvas.Rectangle(0, 0, Size, Size);
+    DrawIconEx(Image.Bitmap.Canvas.Handle, 0, 0, Icon, Size, Size, 0, 0, DI_NORMAL);
+    TaskShield.BringToFront;
+  finally
+    DestroyIcon(Icon);
+  end;
+end;
 
 procedure CurPageChanged(CurPageID: Integer);
 var
   Show: Boolean;
   Extra: Integer;
 begin
+  if CurPageID = wpSelectTasks then AddTaskShield;
   Show := (CurPageID = wpReady) and WizardIsTaskSelected('autoconfig');
   if Show = ShieldShown then Exit;
   ShieldShown := Show;

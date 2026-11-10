@@ -4,9 +4,10 @@
 #ifndef AppVersion
   #define AppVersion "0.0.0"
 #endif
+#define AppGuid "{5EC65DEF-CD39-45E8-82C9-015BE0850079}"
 
 [Setup]
-AppId={{5EC65DEF-CD39-45E8-82C9-015BE0850079}
+AppId={#StringChange(AppGuid, '{', '{{')}
 AppName=FirefoxProcTray
 AppVersion={#AppVersion}
 AppPublisher=sakuya121212
@@ -40,6 +41,10 @@ japanese.SetupFailed=設定の一部に失敗しました（終了コード %1�
 english.SetupFailed=Part of the setup failed (exit code %1).%nRun the following in PowerShell to see details:%n%n%2
 japanese.RestartFirefox=タブ名を表示するには、Firefox を完全に終了してから起動し直してください。
 english.RestartFirefox=To show tab names, quit Firefox completely and start it again.
+japanese.UninstallFailed=Firefox の autoconfig を削除できませんでした（終了コード %1）。管理者権限の確認で「いいえ」を選んだ場合は、再試行して「はい」を選んでください。%n%n中止: アンインストールをやめる%n再試行: もう一度削除する%n無視: autoconfig を残したままアンインストールを続ける
+english.UninstallFailed=Could not remove the Firefox autoconfig (exit code %1). If you declined the administrator approval, retry and approve it.%n%nAbort: cancel the uninstall%nRetry: try again%nIgnore: continue and leave the autoconfig in place
+japanese.UninstallRestartFirefox=Firefox を起動している場合は、完全に終了してから起動し直してください。タブ名の出力が止まります。
+english.UninstallRestartFirefox=If Firefox is running, quit it completely and start it again to stop the tab name output.
 
 [Tasks]
 Name: "autoconfig"; Description: "{cm:TaskAutoconfig}"
@@ -61,10 +66,6 @@ Source: "..\firefox-autoconfig\*"; DestDir: "{app}\firefox-autoconfig"; Flags: i
 ; ショートカット名は uninstall.ps1 が削除する FirefoxProcTray.lnk と揃える
 Name: "{autoprograms}\FirefoxProcTray"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\FirefoxProcTray.ps1"""; WorkingDir: "{app}"; Flags: runminimized
 Name: "{userstartup}\FirefoxProcTray"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\FirefoxProcTray.ps1"""; WorkingDir: "{app}"; Flags: runminimized; Tasks: startup
-
-[UninstallRun]
-; ファイル削除より先に実行される。トレイアプリの終了と autoconfig・出力ファイルの削除を行う
-Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\uninstall.ps1"""; Flags: runhidden waituntilterminated; RunOnceId: "UninstallScript"
 
 [Code]
 const
@@ -178,4 +179,47 @@ begin
     MsgBox(FmtMessage(CustomMessage('SetupFailed'), [IntToStr(ResultCode), 'powershell ' + Params]), mbError, MB_OK)
   else if WizardIsTaskSelected('autoconfig') and not WizardSilent then
     MsgBox(CustomMessage('RestartFirefox'), mbInformation, MB_OK);
+end;
+
+var
+  AutoconfigRemoved: Boolean;
+
+function RunUninstallScript: Integer;
+var
+  ResultCode: Integer;
+begin
+  if not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+              '-NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{app}\uninstall.ps1') + '"',
+              ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+    ResultCode := -1;
+  Result := ResultCode;
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  Code: Integer;
+  Tasks: String;
+begin
+  case CurUninstallStep of
+    usAppMutexCheck:
+      { 削除の確認の後、ファイルを消す前に呼ばれる。[UninstallRun] と違い、失敗時に中止・再試行できる }
+      begin
+        repeat
+          Code := RunUninstallScript;
+          if Code <> 0 then
+            case SuppressibleMsgBox(FmtMessage(CustomMessage('UninstallFailed'), [IntToStr(Code)]),
+                                    mbError, MB_ABORTRETRYIGNORE, IDIGNORE) of
+              IDABORT: Abort;
+              IDIGNORE: Break;
+            end;
+        until Code = 0;
+        { アンインストール情報のレジストリは usPostUninstall では消えているので、ここで読む }
+        AutoconfigRemoved := (Code = 0) and
+          RegQueryStringValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{#AppGuid}_is1',
+                              'Inno Setup: Selected Tasks', Tasks) and (Pos('autoconfig', Tasks) > 0);
+      end;
+    usPostUninstall:
+      if AutoconfigRemoved and not UninstallSilent then
+        MsgBox(CustomMessage('UninstallRestartFirefox'), mbInformation, MB_OK);
+  end;
 end;
